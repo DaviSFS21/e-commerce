@@ -30,9 +30,9 @@ indexação e demonstração de consultas. Não é sobre UI.
 |---|---|---|
 | 1 | Serviços no ar (Mongo + Redis, `mongoid.yml`) | ✅ feito |
 | 2 | `Category` + `FieldSpec` (schema embedado) | ✅ feito |
-| 3 | `Product` + `specs`, sem validação | 🔄 em andamento |
-| 4 | A validação ⭐ | ⬜ |
-| 5 | Seeds | ⬜ |
+| 3 | `Product` + `specs`, sem validação | ✅ feito |
+| 4 | A validação ⭐ | ✅ feito |
+| 5 | Seeds | 🔄 em andamento |
 | 6 | Índices + `explain` ⭐ | ⬜ |
 | 7 | Agregação `$facet` ⭐ | ⬜ |
 | 8 | Carrinho no Redis | ⬜ |
@@ -254,9 +254,163 @@ Lição geral: **declarar não é criar.** A linha no model registra a intençã
 
 ---
 
-## Checkpoint 3 — `Product` + `specs` 🔄
+## Checkpoint 3 — `Product` + `specs` ✅
 
 **Objetivo:** heterogeneidade visível. Três produtos com conjuntos de chaves
 diferentes convivendo na mesma coleção. Ainda **sem validação**.
+
+### O que foi construído
+
+`app/models/product.rb` — `name`, `brand`, `price` (`BigDecimal`), `in_stock`
+(`Mongoid::Boolean`), `specs` (`Hash`). `belongs_to :category`,
+`embeds_many :images`.
+
+`app/models/image.rb` — `url`, `alt`, `position`, `embedded_in :product`.
+
+E o `has_many :products` do `Category` foi descomentado.
+
+### Verificação
+
+```
+ThinkPad X1     ["ram_gb", "touchscreen"]
+Catena Malbec   ["safra", "uva"]
+Pegasus 41      ["tamanho_eu", "impermeavel"]
+coleções: ["categories", "products"]
+```
+
+Três formatos, uma coleção, sem `null` preenchendo coluna que não existe.
+
+### O que ficou entendido
+
+**O `Hash` vira sub-documento BSON de verdade, não texto serializado.**
+
+```ruby
+{"_id" => ..., "name" => "notebook",
+ "specs" => {"ram_gb" => 16, "touchscreen" => false, "cpu" => "M4"}}
+```
+
+E os tipos sobrevivem: `16` continua `Integer`, `false` continua `FalseClass`,
+`"M4"` continua `String`.
+
+**Consequência: dá para consultar dentro do hash.**
+
+```ruby
+Product.where("specs.uva" => "Malbec")
+Product.where(:"specs.safra".gte => 2015)
+Product.where("specs.uva" => { "$exists" => true })
+```
+
+É por isso que o campo é `Hash` e não `String`. Serializado em JSON dentro de uma
+string, seria preciso trazer tudo para a memória e filtrar em Ruby — e o índice
+wildcard do checkpoint 6 seria impossível, porque não existiria caminho
+`specs.uva` para indexar.
+
+**Chave symbol vira string sozinha.** `specs: { ram_gb: 32 }` já sai do
+construtor como `{"ram_gb" => 32}`. Não há inconsistência entre antes e depois de
+salvar.
+
+**`default: -> { {} }`, não `default: {}`.** Com o literal, todas as instâncias
+compartilham o *mesmo* objeto hash e escrever numa contamina as outras.
+
+**`price` como `BigDecimal` vira `decimal` (Decimal128) no BSON.** Confirmado com
+`{ $type: "$price" }`. Float não representa dinheiro exatamente; e se tivesse
+virado String, `price >= 2000` compararia texto — ordenação lexicográfica em
+dinheiro é bug garantido.
+
+**`belongs_to` é referência.** O documento tem `category_id` e não um
+sub-documento `category` — a regra do checkpoint 2 aplicada na direção oposta.
+
+### O gancho para o checkpoint 4
+
+Isto entrou no banco sem um pio:
+
+```ruby
+Product.create!(name: "ThinkPad", category: notebooks, specs: { "uva" => "Malbec" })
+```
+
+Um notebook com uva. É o custo real do schema-on-read, sentido na prática antes
+de resolver.
+
+---
+
+## Checkpoint 4 — a validação ⭐ ✅
+
+**A peça central do projeto.** Schema-on-read não significa ausência de
+validação: significa que ela saiu do DDL e virou dado.
+
+### O que foi construído
+
+`Product#specs_match_category` — validação customizada que lê
+`category.field_specs` em tempo de escrita e aplica quatro regras:
+
+| # | Regra |
+|---|---|
+| 1 | Rejeita chave não declarada pela categoria |
+| 2 | Rejeita valor cujo tipo não bate com o `kind` |
+| 3 | Rejeita chave obrigatória não informada |
+| 4 | **Aceita `false`** para booleano obrigatório |
+
+E dois métodos no `FieldSpec`, que respondem a perguntas diferentes:
+
+```ruby
+def matches?(value)   # o tipo bate?
+def supplied?(value)  # foi informado?
+```
+
+### A armadilha do `false`
+
+`supplied?` **não** usa `blank?`. Em Ruby `false.blank?` é `true`, então uma
+checagem de presença rejeitaria `touchscreen: false` — um tênis que não é
+impermeável, um vinho que não é orgânico. `0` é o irmão do mesmo problema.
+
+Só `nil` e string em branco contam como não informado.
+
+### Dois bugs encontrados na revisão
+
+**`return` no lugar de `next`.** Ao achar uma chave não declarada, o `return`
+saía do método inteiro, então a checagem de obrigatórias nunca rodava. Pior:
+o resultado dependia da ordem das chaves no hash — o mesmo erro reportava coisas
+diferentes conforme a ordem de iteração.
+
+**String vazia passava em campo obrigatório.** `"".is_a?(String)` é `true`, então
+`matches?` aprovava e a chave contava como preenchida. A correção foi checar
+`supplied?` **antes** de marcar a obrigatória como satisfeita — o que também
+corrigiu a mensagem de `nil`, que antes reclamava de tipo quando o problema era
+ausência.
+
+### Verificação — 14 casos
+
+```
+ok  1. specs corretas                       true
+ok  2. chave não declarada                  false  "Atributo uva não está na categoria"
+ok  3. tipo errado                          false  "Tipo do atributo ram_gb deve ser number"
+ok  4. obrigatória ausente                  false  "Atributos obrigatórios faltantes: ram_gb"
+ok  5. FALSE em booleano obrigatório        true
+ok  6. não declarada + falta obrigatória    false  reporta os dois problemas
+ok  7. duas não declaradas                  false  reporta as duas
+ok  9. string vazia em obrigatória          false
+ok 10. nil em obrigatória                   false  "faltantes", não "tipo errado"
+ok 11. zero em número obrigatório           true
+ok 12. opcional ausente                     true
+ok 13. opcional com string vazia            true
+ok 14. opcional com tipo errado             false
+ok 15. specs vazio                          false  lista as três obrigatórias
+```
+
+### Refatorações aplicadas
+
+`for ... in` → `each`; `.keys.include?` → busca direta no hash (o `index_by`
+existe justamente para dar busca O(1)); `.pluck(:key)` → `.map(&:key)`;
+`select(&:required)` → `select(&:required?)`; `!required.blank?` →
+`required.any?`; e removido o `errors.add(:category, ...)` que duplicava o erro
+já emitido pelo `belongs_to` (obrigatório por padrão no Mongoid 9).
+
+---
+
+## Checkpoint 5 — Seeds 🔄
+
+**Objetivo:** um catálogo de verdade, com três categorias de formatos
+genuinamente diferentes, para os checkpoints 6 e 7 terem dados sobre os quais
+medir.
 
 *(a preencher ao concluir)*
