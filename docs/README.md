@@ -32,8 +32,8 @@ indexação e demonstração de consultas. Não é sobre UI.
 | 2 | `Category` + `FieldSpec` (schema embedado) | ✅ feito |
 | 3 | `Product` + `specs`, sem validação | ✅ feito |
 | 4 | A validação ⭐ | ✅ feito |
-| 5 | Seeds | 🔄 em andamento |
-| 6 | Índices + `explain` ⭐ | ⬜ |
+| 5 | Seeds | ✅ feito |
+| 6 | Índices + `explain` ⭐ | 🔄 em andamento |
 | 7 | Agregação `$facet` ⭐ | ⬜ |
 | 8 | Carrinho no Redis | ⬜ |
 | 9 | `Order` + snapshot | ⬜ |
@@ -407,10 +407,87 @@ já emitido pelo `belongs_to` (obrigatório por padrão no Mongoid 9).
 
 ---
 
-## Checkpoint 5 — Seeds 🔄
+## Checkpoint 5 — Seeds ✅
 
 **Objetivo:** um catálogo de verdade, com três categorias de formatos
 genuinamente diferentes, para os checkpoints 6 e 7 terem dados sobre os quais
 medir.
+
+### O que foi construído
+
+`lib/catalog/blueprint.rb` — o catálogo como dado, três categorias × 10 produtos.
+`db/seeds.rb` apenas chama `Catalog::Blueprint.load!`.
+
+**Por que em `lib/` e não direto em `db/seeds.rb`:** no checkpoint 7 os testes de
+agregação vão afirmar contagens de faceta ("Lenovo = 3"). Com o catálogo em
+`lib/`, o seed e o teste leem a mesma fonte, em vez de duplicar os números.
+`lib/` já é autoloaded, então `Catalog::Blueprint` funciona sem require.
+
+`load!` faz `delete_all` antes de recriar — rodar duas vezes deixa os mesmos 30
+produtos, senão as contagens do checkpoint 7 mudariam a cada `db:seed`.
+
+### Resultado
+
+```
+categorias=3 produtos=30   todos válidos: true
+
+notebooks          10 produtos  min=2499.00  max=14999.00
+tenis-de-corrida   10 produtos  min=349.90   max=1899.90
+vinhos             10 produtos  min=54.90    max=529.00
+
+marcas (notebooks): Lenovo=3, Apple=2, Dell=2, Asus=2, Framework=1
+```
+
+### Como os dados foram desenhados
+
+Pensando no checkpoint 7, porque uma faceta só demonstra algo se houver o que
+contar:
+
+- **Marcas repetem.** 4–5 marcas por categoria, com contagens diferentes. Se cada
+  produto tivesse marca única, a faceta seria uma lista de contagens 1.
+- **Preços espalhados**, e em três escalas bem diferentes entre categorias
+  (dezenas de reais nos vinhos, milhares nos notebooks). É o que vai obrigar a
+  decidir, no checkpoint 7, se os baldes de faixa de preço são fixos ou
+  calculados por categoria.
+- **Valores de spec repetem**: `uva` tem Cabernet×2 e Merlot×2, `pais` tem
+  Brasil×4, `superficie` tem asfalto×7 e trilha×3.
+
+### Casos plantados de propósito
+
+| Caso | Onde | Para quê |
+|---|---|---|
+| `drop_mm: 0` | Grafite 2 | zero é valor legítimo — irmão do `false` |
+| `impermeavel`/`touchscreen: false` | maioria dos produtos | se a validação regredir para `blank?`, o seed quebra na hora |
+| sem `cpu` (opcional) | Framework 13 | chave ausente **não** obrigatória tem que passar |
+| `in_stock: false` | 1 por categoria | filtro de estoque no checkpoint 10 |
+
+O seed funciona como teste de regressão da validação do checkpoint 4: se ela
+quebrar, `db:seed` estoura.
+
+### A descoberta que motiva o checkpoint 6
+
+Listando todas as chaves de spec distintas da coleção inteira:
+
+```ruby
+Product.all.flat_map { |p| p.specs.keys }.uniq.sort
+# => ["armazenamento_gb", "cpu", "drop_mm", "impermeavel", "organico", "pais",
+#     "peso_g", "ram_gb", "safra", "superficie", "tamanho_eu", "tela_polegadas",
+#     "teor_alcoolico", "touchscreen", "uva"]
+```
+
+**Quinze chaves diferentes, e nenhuma delas é conhecida em tempo de código.** Uma
+quarta categoria acrescentaria mais cinco amanhã.
+
+É exatamente por isso que o índice do checkpoint 6 precisa ser *wildcard*: não dá
+para declarar um índice por chave quando o conjunto de chaves é aberto, e
+declarar um índice para cada chave futura não escala — cada índice é custo de
+escrita em toda inserção.
+
+---
+
+## Checkpoint 6 — Índices + `explain` ⭐ 🔄
+
+**Objetivo:** provar, com saída de `explain`, que as consultas do catálogo
+deixaram de varrer a coleção inteira.
 
 *(a preencher ao concluir)*
