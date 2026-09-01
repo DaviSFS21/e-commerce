@@ -5,19 +5,6 @@ class ProductFacets
   Bucket = Struct.new(:key, :label, :count, keyword_init: true)
   Result = Struct.new(:total, :brands, :price_buckets, :min_price, :max_price, keyword_init: true)
 
-  # Translates a bucket key from the sidebar back into a price range, so the
-  # listing and the facet counts agree on what a bucket means.
-  def self.price_condition(bucket_key)
-    return nil if bucket_key.blank?
-    return { :price.gte => PRICE_BOUNDARIES.last } if bucket_key == OVERFLOW_KEY
-
-    lower = PRICE_BOUNDARIES.find { |b| b.to_s == bucket_key.to_s }
-    return nil if lower.nil?
-
-    upper = PRICE_BOUNDARIES[PRICE_BOUNDARIES.index(lower) + 1]
-    upper ? { :price.gte => lower, :price.lt => upper } : { :price.gte => lower }
-  end
-
   def initialize(category:)
     @category = category
   end

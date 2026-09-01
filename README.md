@@ -261,8 +261,13 @@ O mesmo template renderiza "Safra / 2019 / Teor alcoólico / 13.9 %" para um vin
 "Memória RAM / 16 GB / Touchscreen / Não" para um notebook. Uma categoria nova entra
 funcionando.
 
-As contagens da barra lateral são calculadas sobre a categoria inteira, não sobre o
-filtro corrente — selecionar "Apple" não pode reduzir a lista de marcas a Apple sozinha.
+O filtro de preço é um slider de faixa com duas alças, cujos limites vêm do `$min`/`$max`
+do próprio `$facet`; atrás dele, um histograma desenhado com as contagens do `$bucket`
+mostra onde os produtos se concentram. Sem JavaScript os dois `input[type=range]` ainda
+submetem o formulário.
+
+As contagens de marca são calculadas sobre a categoria inteira, não sobre o filtro
+corrente — selecionar "Apple" não pode reduzir a lista de marcas a Apple sozinha.
 
 ---
 

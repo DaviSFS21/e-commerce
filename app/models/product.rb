@@ -9,7 +9,6 @@ class Product
   field :specs, type: Hash, default: -> { {} }
 
   belongs_to :category
-  embeds_many :images
 
   validates :name, presence: true
   validates :brand, presence: true

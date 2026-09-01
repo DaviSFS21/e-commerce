@@ -15,12 +15,14 @@
 
 <div class="layout">
   <aside class="facets">
-    <% if params[:brand].present? || params[:bucket].present? %>
+    <% if params[:brand].present? || params[:min].present? || params[:max].present? %>
       <div class="facet">
         <h3>Filtros</h3>
         <div class="chips">
           <% if params[:brand].present? %><span class="chip"><%= params[:brand] %></span><% end %>
-          <% if params[:bucket].present? %><span class="chip">faixa de preço</span><% end %>
+          <% if params[:min].present? || params[:max].present? %>
+            <span class="chip"><%= money(@min_price) %> – <%= money(@max_price) %></span>
+          <% end %>
         </div>
         <%= link_to "Limpar", category_products_path(slug: @category.slug), class: "btn ghost" %>
       </div>
@@ -28,16 +30,45 @@
 
     <div class="facet">
       <h3>Preço</h3>
-      <p class="range"><%= money(@facets.min_price) %> – <%= money(@facets.max_price) %></p>
-      <ul>
-        <% @facets.price_buckets.each do |bucket| %>
-          <li class="<%= "on" if params[:bucket] == bucket.key %>">
-            <%= link_to bucket.label,
-                        filter_link(@category.slug, bucket: (params[:bucket] == bucket.key ? nil : bucket.key)) %>
-            <span class="n"><%= bucket.count %></span>
-          </li>
+
+      <%# Histograma vindo do $bucket do mesmo $facet: mostra onde os produtos
+          se concentram, atrás do slider. %>
+      <% maior = @facets.price_buckets.map(&:count).max.to_i %>
+      <% if maior.positive? %>
+        <div class="hist">
+          <% @facets.price_buckets.each do |faixa| %>
+            <span class="bar" style="height: <%= [ (faixa.count * 100 / maior), 8 ].max %>%"
+                  title="<%= faixa.label %>: <%= faixa.count %>"></span>
+          <% end %>
+        </div>
+      <% end %>
+
+      <% piso = @facets.min_price.to_i %>
+      <% teto = @facets.max_price.ceil.to_i %>
+      <%= form_with url: category_products_path(slug: @category.slug), method: :get,
+                    data: { controller: "price-range",
+                            price_range_floor_value: piso,
+                            price_range_ceil_value: teto } do %>
+        <% if params[:brand].present? %>
+          <%= hidden_field_tag :brand, params[:brand] %>
         <% end %>
-      </ul>
+
+        <div class="slider">
+          <span class="slider-fill" data-price-range-target="fill"></span>
+          <%= range_field_tag :min, @min_price.to_i, min: piso, max: teto, step: 1,
+                              data: { price_range_target: "min", action: "input->price-range#refresh" } %>
+          <%= range_field_tag :max, @max_price.ceil.to_i, min: piso, max: teto, step: 1,
+                              data: { price_range_target: "max", action: "input->price-range#refresh" } %>
+        </div>
+
+        <p class="range">
+          <span data-price-range-target="minLabel"><%= money(@min_price) %></span>
+          –
+          <span data-price-range-target="maxLabel"><%= money(@max_price) %></span>
+        </p>
+
+        <%= submit_tag "Aplicar", class: "btn", data: { turbo: false } %>
+      <% end %>
     </div>
 
     <div class="facet">
@@ -52,11 +83,6 @@
         <% end %>
       </ul>
     </div>
-
-    <p class="nota">
-      Contagens vindas de um único <code>$facet</code> — uma ida ao MongoDB
-      para a barra inteira.
-    </p>
   </aside>
 
   <section>

@@ -624,10 +624,25 @@ os `field_specs` da categoria e tira dali rótulo, ordem e unidade — o mesmo
 template renderiza "Safra / 2019" para um vinho e "Memória RAM / 16 GB" para um
 notebook.
 
-Filtros verificados: `?brand=Lenovo` → 3 produtos, `?bucket=5000.0` → 5,
-`?brand=Miolo` → 2. As contagens da barra são calculadas sobre a categoria
-inteira, não sobre o filtro corrente, senão selecionar "Apple" reduziria a lista
-de marcas a Apple sozinha.
+O filtro de preço é um **slider de faixa** com duas alças (controller Stimulus
+`price-range`), limitado pelo mínimo e máximo que vêm do próprio `$facet`. Atrás
+dele, um histograma desenhado com as contagens do `$bucket` mostra onde os
+produtos se concentram. Sem JavaScript os dois `input[type=range]` ainda
+submetem o formulário, então o filtro continua funcionando.
+
+Filtros verificados:
+
+```
+/catalogo/notebooks                          10 produtos
+/catalogo/notebooks?min=2000&max=5000         3
+/catalogo/notebooks?min=7000&max=15000        6
+/catalogo/notebooks?brand=Lenovo&min=2000&max=7000   2
+/catalogo/notebooks?min=abc&max=xyz          10   (entrada inválida não filtra nem estoura)
+```
+
+As contagens de marca são calculadas sobre a categoria inteira, não sobre o
+filtro corrente, senão selecionar "Apple" reduziria a lista de marcas a Apple
+sozinha.
 
 ---
 

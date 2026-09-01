@@ -3,11 +3,10 @@ module CatalogHelper
     number_to_currency(amount, unit: "R$ ", separator: ",", delimiter: ".")
   end
 
-  # Toggles one filter on or off, preserving the other.
-  def filter_link(slug, brand: :keep, bucket: :keep)
-    query = {}
-    query[:brand]  = brand  == :keep ? params[:brand].presence  : brand
-    query[:bucket] = bucket == :keep ? params[:bucket].presence : bucket
+  # Toggles the brand filter on or off, preserving the price range.
+  def filter_link(slug, brand: :keep)
+    query = { min: params[:min].presence, max: params[:max].presence }
+    query[:brand] = brand == :keep ? params[:brand].presence : brand
     category_products_path(slug: slug, **query.compact)
   end
 

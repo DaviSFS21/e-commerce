@@ -40,7 +40,30 @@ aside.facets, .panel { background:var(--panel); border:1px solid var(--line);
 .facet li { display:flex; justify-content:space-between; gap:8px; padding:3px 0; font-size:13px; }
 .facet li .n { color:var(--muted); font-variant-numeric:tabular-nums; }
 .facet li.on a { font-weight:600; color:var(--ink); }
-.range { font-size:13px; color:var(--muted); margin:0 0 8px; }
+.range { font-size:13px; color:var(--muted); margin:8px 0 10px;
+  display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; }
+
+/* histograma das faixas, vindo do $bucket */
+.hist { display:flex; align-items:flex-end; gap:3px; height:34px; margin-bottom:6px; }
+.hist .bar { flex:1; background:var(--accent-soft); border-radius:2px 2px 0 0; min-height:3px; }
+
+/* slider de faixa de preco: dois range sobrepostos */
+.slider { position:relative; height:26px; margin:4px 0 0; }
+.slider::before { content:""; position:absolute; left:0; right:0; top:11px; height:4px;
+  background:var(--line); border-radius:2px; }
+.slider .slider-fill { position:absolute; top:11px; height:4px; background:var(--accent);
+  border-radius:2px; pointer-events:none; }
+.slider input[type="range"] { position:absolute; left:0; width:100%; top:6px; margin:0;
+  -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none; height:14px; }
+.slider input[type="range"]:focus { outline:none; }
+.slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; pointer-events:auto;
+  width:14px; height:14px; border-radius:50%; background:var(--panel);
+  border:2px solid var(--accent); cursor:grab; }
+.slider input[type="range"]::-moz-range-thumb { pointer-events:auto;
+  width:14px; height:14px; border-radius:50%; background:var(--panel);
+  border:2px solid var(--accent); cursor:grab; }
+.slider input[type="range"]::-moz-range-track { background:transparent; }
+.facet input[type="submit"] { cursor:pointer; font:inherit; font-size:13px; width:100%; }
 .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
 .chip { font-size:12px; background:var(--accent-soft); color:var(--accent);
   border-radius:999px; padding:3px 10px; }

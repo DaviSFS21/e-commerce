@@ -6,6 +6,8 @@ class ProductsController < ApplicationController
     return render :empty if @category.nil?
 
     @facets = ProductFacets.new(category: @category).call
+    @min_price = decimal_param(:min) || @facets.min_price
+    @max_price = decimal_param(:max) || @facets.max_price
     @products = filtered_products.asc(:price).to_a
   end
 
@@ -22,7 +24,21 @@ class ProductsController < ApplicationController
     scope = Product.where(category_id: @category.id)
     scope = scope.where(brand: params[:brand]) if params[:brand].present?
 
-    price = ProductFacets.price_condition(params[:bucket])
-    price ? scope.where(price) : scope
+    min = decimal_param(:min)
+    max = decimal_param(:max)
+    scope = scope.gte(price: min) if min
+    scope = scope.lte(price: max) if max
+    scope
+  end
+
+  # Params arrive as strings and may be anything; a bad value filters nothing
+  # rather than raising.
+  def decimal_param(key)
+    raw = params[key]
+    return nil if raw.blank?
+
+    BigDecimal(raw.to_s)
+  rescue ArgumentError, TypeError
+    nil
   end
 end
