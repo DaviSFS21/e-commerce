@@ -16,6 +16,10 @@ class Product
   validates :price, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validate  :specs_match_category
 
+  index({ category_id: 1, price: 1 }, { name: "category_price" })
+  index({ "specs.$**" => 1 }, { name: "specs" })
+  index({ name: "text", brand: "text" }, { name: "name_brand" })
+
   private
 
   def specs_match_category

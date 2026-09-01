@@ -8,19 +8,13 @@ funcionar".
 **Critério de avaliação:** proficiência com bancos não-relacionais — modelagem,
 indexação e demonstração de consultas. Não é sobre UI.
 
-**Branches:**
-
-| branch | o que é |
-|---|---|
-| `rebuild` | a reconstrução, feita à mão. É aqui que se trabalha. |
-| `main` | implementação de referência completa (não consultar antes de tentar) |
-| `keycloak-spike` | integração OIDC com Keycloak + export do realm, para reuso futuro |
-
 **Documentos:**
 
 - [`modelagem.md`](modelagem.md) — o modelo de dados alvo, com diagramas: o que é
   embedado, o que é referenciado, e por quê. Consulte antes de cada checkpoint
   que cria um model.
+- [`index-optimization.md`](index-optimization.md) — a saída completa do
+  `explain` antes e depois dos índices, para a consulta de listagem filtrada.
 
 ---
 
@@ -33,8 +27,8 @@ indexação e demonstração de consultas. Não é sobre UI.
 | 3 | `Product` + `specs`, sem validação | ✅ feito |
 | 4 | A validação ⭐ | ✅ feito |
 | 5 | Seeds | ✅ feito |
-| 6 | Índices + `explain` ⭐ | 🔄 em andamento |
-| 7 | Agregação `$facet` ⭐ | ⬜ |
+| 6 | Índices + `explain` ⭐ | ✅ feito |
+| 7 | Agregação `$facet` ⭐ | 🔄 em andamento |
 | 8 | Carrinho no Redis | ⬜ |
 | 9 | `Order` + snapshot | ⬜ |
 | 10 | UI (listagem, sidebar facetada, detalhe) | ⬜ |
@@ -485,9 +479,96 @@ escrita em toda inserção.
 
 ---
 
-## Checkpoint 6 — Índices + `explain` ⭐ 🔄
+## Checkpoint 6 — Índices + `explain` ⭐ ✅
 
 **Objetivo:** provar, com saída de `explain`, que as consultas do catálogo
 deixaram de varrer a coleção inteira.
+
+A saída bruta do `explain`, antes e depois, está em
+[`index-optimization.md`](index-optimization.md).
+
+### Índices declarados
+
+```ruby
+index({ category_id: 1, price: 1 }, { name: "category_price" })
+index({ "specs.$**" => 1 },         { name: "specs" })
+index({ name: "text", brand: "text" }, { name: "name_brand" })
+```
+
+Criados com `bin/rails db:mongoid:create_indexes` e conferidos no servidor, não
+só no model:
+
+```
+_id_            {"_id":1}
+category_price  {"category_id":1,"price":1}
+specs           {"specs.$**":1}
+name_brand      {"_fts":"text","_ftsx":1}
+```
+
+### O ganho, medido
+
+Consulta de listagem filtrada — uma categoria, faixa de preço:
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| estágio | `COLLSCAN` | `IXSCAN` → `FETCH` |
+| `totalDocsExamined` | 30 | 7 |
+| `totalKeysExamined` | 0 | 7 |
+| `works` | 31 | 8 |
+| `nReturned` | 7 | 7 |
+
+Examinou exatamente os 7 documentos que devolveu, em vez dos 30 da coleção.
+
+**O que isso significa, e o que não significa.** Numa coleção de 30 documentos o
+tempo de relógio não mede nada útil — tudo cabe em memória e o próprio
+planejamento do plano custa mais que a varredura. O que o `explain` prova é
+mudança de **classe de complexidade**: `COLLSCAN` é O(n) no tamanho da coleção,
+`IXSCAN` é O(log n + k), com k = tamanho do resultado. Em 30 documentos isso é
+invisível; em 300 mil é a diferença entre milissegundos e segundos.
+
+### As demais consultas
+
+```
+specs.uva = Malbec             IXSCAN  idx=specs       ret=1  docs=1   keys=1
+specs.impermeavel = true       IXSCAN  idx=specs       ret=3  docs=3   keys=3
+specs.ram_gb >= 16             IXSCAN  idx=specs       ret=7  docs=7   keys=7
+texto: MacBook                 IXSCAN  idx=name_brand  ret=2  docs=2   keys=2
+in_stock = false (sem índice)  COLLSCAN                ret=3  docs=30  keys=0
+```
+
+A última linha é o **caso de controle**, e importa: sem ela, "deu IXSCAN" não
+prova nada — poderia ser que toda consulta desse IXSCAN. Com ela, fica
+demonstrado que a medição distingue os dois casos.
+
+### Por que wildcard e não um índice por chave
+
+O checkpoint 5 mostrou 15 chaves de spec distintas, nenhuma conhecida em tempo de
+código. O `keyPattern` do plano explica como um índice só dá conta:
+
+```
+{"$_path" => 1, "specs.uva" => 1}
+```
+
+O MongoDB limita `$_path` à chave consultada e varre os valores dentro dela. Um
+índice físico se comporta como um índice por chave — para qualquer chave,
+inclusive as que ainda não existem. As três consultas de spec acima usam
+categorias diferentes e o mesmo índice `specs`.
+
+A alternativa seria declarar 15 índices e mais 5 a cada categoria nova. Cada
+índice é custo de escrita em toda inserção, e nenhum deles cobriria a chave
+inventada amanhã.
+
+### Sobre a ordem das chaves no índice composto
+
+`{ category_id: 1, price: 1 }`, nessa ordem: igualdade primeiro, faixa e
+ordenação depois. Invertido, o índice ainda serve o filtro mas não a ordenação, e
+aparece um estágio `SORT` bloqueante no plano.
+
+---
+
+## Checkpoint 7 — Agregação `$facet` ⭐ 🔄
+
+**Objetivo:** a sidebar inteira — contagens por marca, por faixa de preço, e
+min/max — numa única ida ao servidor.
 
 *(a preencher ao concluir)*
