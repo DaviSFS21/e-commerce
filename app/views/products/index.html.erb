@@ -1,0 +1,71 @@
+<% content_for :title, @category.name %>
+
+<h1><%= @category.name %></h1>
+<p class="sub">
+  <%= pluralize(@facets.total, "produto") %> nesta categoria ·
+  schema declarado pela categoria: <%= @category.field_specs.map(&:key).join(", ") %>
+</p>
+
+<nav class="tabs">
+  <% @categories.each do |categoria| %>
+    <%= link_to categoria.name, category_products_path(slug: categoria.slug),
+                class: ("on" if categoria == @category) %>
+  <% end %>
+</nav>
+
+<div class="layout">
+  <aside class="facets">
+    <% if params[:brand].present? || params[:bucket].present? %>
+      <div class="facet">
+        <h3>Filtros</h3>
+        <div class="chips">
+          <% if params[:brand].present? %><span class="chip"><%= params[:brand] %></span><% end %>
+          <% if params[:bucket].present? %><span class="chip">faixa de preço</span><% end %>
+        </div>
+        <%= link_to "Limpar", category_products_path(slug: @category.slug), class: "btn ghost" %>
+      </div>
+    <% end %>
+
+    <div class="facet">
+      <h3>Preço</h3>
+      <p class="range"><%= money(@facets.min_price) %> – <%= money(@facets.max_price) %></p>
+      <ul>
+        <% @facets.price_buckets.each do |bucket| %>
+          <li class="<%= "on" if params[:bucket] == bucket.key %>">
+            <%= link_to bucket.label,
+                        filter_link(@category.slug, bucket: (params[:bucket] == bucket.key ? nil : bucket.key)) %>
+            <span class="n"><%= bucket.count %></span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+
+    <div class="facet">
+      <h3>Marca</h3>
+      <ul>
+        <% @facets.brands.each do |marca| %>
+          <li class="<%= "on" if params[:brand] == marca.key %>">
+            <%= link_to marca.label,
+                        filter_link(@category.slug, brand: (params[:brand] == marca.key ? nil : marca.key)) %>
+            <span class="n"><%= marca.count %></span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+
+    <p class="nota">
+      Contagens vindas de um único <code>$facet</code> — uma ida ao MongoDB
+      para a barra inteira.
+    </p>
+  </aside>
+
+  <section>
+    <% if @products.empty? %>
+      <p class="empty">Nenhum produto com esses filtros.</p>
+    <% else %>
+      <div class="grid">
+        <%= render partial: "products/product", collection: @products, as: :produto %>
+      </div>
+    <% end %>
+  </section>
+</div>

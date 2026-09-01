@@ -1,10 +1,66 @@
-/*
- * This is a manifest file that'll be compiled into application.css.
- *
- * With Propshaft, assets are served efficiently without preprocessing steps. You can still include
- * application-wide styles in this file, but keep in mind that CSS precedence will follow the standard
- * cascading order, meaning styles declared later in the document or manifest will override earlier ones,
- * depending on specificity.
- *
- * Consider organizing styles into separate files for maintainability.
- */
+:root {
+  --bg:#fbfbfa; --panel:#fff; --ink:#1c1c1a; --muted:#6b6b66;
+  --line:#e4e4df; --accent:#2f5d50; --accent-soft:#eaf1ee; --warn:#9a3412; --radius:8px;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+.wrap { max-width:1140px; margin:0 auto; padding:0 20px; }
+
+header.site { border-bottom:1px solid var(--line); background:var(--panel); }
+header.site .wrap { display:flex; align-items:center; gap:20px; height:58px; }
+header.site .brand { font-weight:700; font-size:17px; letter-spacing:-.02em; color:var(--ink); }
+header.site .tag { margin-left:auto; font-size:12px; color:var(--muted); }
+
+main { padding:26px 0 60px; }
+h1 { font-size:24px; margin:0 0 4px; letter-spacing:-.02em; }
+h2 { font-size:17px; margin:0 0 10px; }
+.sub { color:var(--muted); font-size:13px; margin:0 0 20px; }
+.nota { color:var(--muted); font-size:12px; line-height:1.5; margin:12px 0 0; }
+code { background:var(--accent-soft); padding:1px 5px; border-radius:4px; font-size:12px; }
+
+.tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:22px; }
+.tabs a { padding:6px 13px; border:1px solid var(--line); border-radius:999px;
+  background:var(--panel); color:var(--ink); font-size:13px; }
+.tabs a.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+.layout { display:grid; grid-template-columns:236px 1fr; gap:26px; align-items:start; }
+@media (max-width:780px) { .layout { grid-template-columns:1fr; } }
+
+aside.facets, .panel { background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:16px; }
+.panel { padding:20px; }
+.facet { margin-bottom:18px; }
+.facet:last-of-type { margin-bottom:0; }
+.facet h3 { font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+  color:var(--muted); margin:0 0 8px; font-weight:600; }
+.facet ul { list-style:none; margin:0; padding:0; }
+.facet li { display:flex; justify-content:space-between; gap:8px; padding:3px 0; font-size:13px; }
+.facet li .n { color:var(--muted); font-variant-numeric:tabular-nums; }
+.facet li.on a { font-weight:600; color:var(--ink); }
+.range { font-size:13px; color:var(--muted); margin:0 0 8px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.chip { font-size:12px; background:var(--accent-soft); color:var(--accent);
+  border-radius:999px; padding:3px 10px; }
+
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(215px, 1fr)); gap:14px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:13px; display:flex; flex-direction:column; gap:6px; }
+.brand { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.name { font-weight:600; font-size:14px; }
+.price { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+.price.big { font-size:26px; margin:4px 0; }
+.specline { font-size:12px; color:var(--muted); }
+.oos { color:var(--warn); font-size:12px; font-weight:600; }
+
+.btn { display:inline-block; border:1px solid var(--accent); background:var(--accent);
+  color:#fff; border-radius:6px; padding:5px 11px; font-size:13px; }
+.btn.ghost { background:transparent; color:var(--accent); }
+
+dl.specs { display:grid; grid-template-columns:max-content 1fr; gap:7px 20px; margin:0; }
+dl.specs dt { color:var(--muted); font-size:13px; }
+dl.specs dd { margin:0; font-size:14px; font-weight:500; }
+
+.empty { color:var(--muted); padding:30px 0; }

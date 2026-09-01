@@ -19,11 +19,19 @@
     <link rel="apple-touch-icon" href="/icon.png">
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
-    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
   <body>
-    <%= yield %>
+    <header class="site">
+      <div class="wrap">
+        <a class="brand" href="/">Catálogo</a>
+        <span class="tag">Rails · Mongoid · MongoDB</span>
+      </div>
+    </header>
+    <main>
+      <div class="wrap"><%= yield %></div>
+    </main>
   </body>
 </html>

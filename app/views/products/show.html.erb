@@ -1,0 +1,29 @@
+<% content_for :title, @product.name %>
+
+<p class="sub"><%= link_to "← #{@category.name}", category_products_path(slug: @category.slug) %></p>
+
+<div class="layout">
+  <div class="panel">
+    <span class="brand"><%= @product.brand %></span>
+    <h1><%= @product.name %></h1>
+    <p class="price big"><%= money(@product.price) %></p>
+    <p class="sub"><%= @product.in_stock ? "Em estoque" : "Sem estoque" %></p>
+    <% if @product.images.any? %>
+      <p class="nota"><%= pluralize(@product.images.size, "imagem") %> embedada neste documento</p>
+    <% end %>
+  </div>
+
+  <div class="panel">
+    <h2>Especificações</h2>
+    <p class="nota">
+      Rótulos, ordem e unidades vêm dos <code>field_specs</code> da categoria
+      <%= @category.name %>. Esta página renderiza qualquer categoria sem código específico.
+    </p>
+    <dl class="specs">
+      <% @category.field_specs.each do |field_spec| %>
+        <dt><%= field_spec.label %></dt>
+        <dd><%= spec_value(field_spec, @product.specs[field_spec.key]) %></dd>
+      <% end %>
+    </dl>
+  </div>
+</div>

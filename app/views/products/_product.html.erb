@@ -1,0 +1,7 @@
+<article class="card">
+  <span class="brand"><%= produto.brand %></span>
+  <span class="name"><%= link_to produto.name, product_path(produto) %></span>
+  <span class="price"><%= money(produto.price) %></span>
+  <span class="specline"><%= spec_summary(produto) %></span>
+  <% unless produto.in_stock %><span class="oos">Sem estoque</span><% end %>
+</article>

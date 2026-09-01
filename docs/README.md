@@ -28,11 +28,11 @@ indexação e demonstração de consultas. Não é sobre UI.
 | 4 | A validação ⭐ | ✅ feito |
 | 5 | Seeds | ✅ feito |
 | 6 | Índices + `explain` ⭐ | ✅ feito |
-| 7 | Agregação `$facet` ⭐ | 🔄 em andamento |
-| 8 | Carrinho no Redis | ⬜ |
-| 9 | `Order` + snapshot | ⬜ |
-| 10 | UI (listagem, sidebar facetada, detalhe) | ⬜ |
-| 11 | README final + suíte verde | ⬜ |
+| 7 | Agregação `$facet` ⭐ | ✅ feito |
+| 8 | Carrinho no Redis | ✂️ cortado (tempo) |
+| 9 | `Order` + snapshot | ✂️ cortado (tempo) |
+| 10 | UI (listagem, sidebar facetada, detalhe) | ✅ feito |
+| 11 | README final | ✅ feito (sem suíte de testes) |
 
 ⭐ = material diretamente avaliado.
 
@@ -566,9 +566,73 @@ aparece um estágio `SORT` bloqueante no plano.
 
 ---
 
-## Checkpoint 7 — Agregação `$facet` ⭐ 🔄
+## Checkpoint 7 — Agregação `$facet` ⭐ ✅
 
 **Objetivo:** a sidebar inteira — contagens por marca, por faixa de preço, e
 min/max — numa única ida ao servidor.
 
-*(a preencher ao concluir)*
+### O que foi construído
+
+`app/services/product_facets.rb`. A pipeline tem dois estágios: um `$match` e um
+`$facet` com quatro sub-pipelines (`$sortByCount`, `$bucket`, `$group` com
+`$min`/`$max`, `$count`). A classe traduz a saída crua em `Struct`s com rótulo
+pronto, para a view não precisar saber nada de MongoDB.
+
+### Resultado
+
+```
+notebooks  Lenovo=3, Dell=2, Asus=2, Apple=2, Framework=1   min=2499.00  max=14999.00
+tênis      5 marcas × 2                                      min=349.90   max=1899.90
+vinhos     5 marcas × 2                                      min=54.90    max=529.00
+```
+
+Soma das contagens de marca = 10 em cada categoria. Tráfego de rede da chamada,
+medido pelo monitor de comandos do driver: `["aggregate"]`.
+
+### Como abordar o `$facet`
+
+Não comece por ele. Escreva **uma** agregação sozinha (`$match` + `$sortByCount`),
+acerte no console, escreva a segunda, e só então cole as duas dentro do `$facet`.
+Ele não é operador novo: é uma caixa `nome => pipeline` onde cada sub-pipeline
+recebe os mesmos documentos do estágio anterior.
+
+### Dois bugs encontrados
+
+**Vírgula virando array.** `x = { ... }, { ... }` em Ruby atribui um *array* de
+dois hashes. Envolvido em mais um array, virou array dentro de array e o Mongo
+recusou: *"elements of arrays in $facet spec must be non-empty objects"*.
+
+**O `$match` dentro de um sub-pipeline.** Só a faceta de marcas filtrava por
+categoria; `price_buckets`, `price_range` e `total` agregavam sobre a coleção
+inteira. Esse **não dá erro** — dá números errados em silêncio. O `$match` tem
+que ser o primeiro estágio da pipeline externa.
+
+### Pegadinha para testes
+
+`$sortByCount` não garante ordem entre empates. Dell, Asus e Apple empatam em 2 e
+a ordem entre elas muda de execução para execução. Um teste que afirme a ordem do
+array vai falhar de vez em quando — compare como hash.
+
+---
+
+## Checkpoint 10 — Interface ✅
+
+Listagem por categoria com barra lateral facetada, e página de detalhe.
+
+**Nenhum código específico por categoria nas views.** A página de detalhe percorre
+os `field_specs` da categoria e tira dali rótulo, ordem e unidade — o mesmo
+template renderiza "Safra / 2019" para um vinho e "Memória RAM / 16 GB" para um
+notebook.
+
+Filtros verificados: `?brand=Lenovo` → 3 produtos, `?bucket=5000.0` → 5,
+`?brand=Miolo` → 2. As contagens da barra são calculadas sobre a categoria
+inteira, não sobre o filtro corrente, senão selecionar "Apple" reduziria a lista
+de marcas a Apple sozinha.
+
+---
+
+## Checkpoints 8 e 9 — cortados ✂️
+
+Carrinho em Redis e `Order` com snapshot denormalizado ficaram fora por tempo. O
+`docker-compose.yml` já sobe o Redis e o modelo previsto está em
+[`modelagem.md`](modelagem.md), então dá para retomar sem retrabalho.
