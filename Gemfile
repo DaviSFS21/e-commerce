@@ -17,9 +17,6 @@ gem "jbuilder"
 # Mongoid is the ODM for MongoDB; ActiveRecord was skipped at generation time.
 gem "mongoid", "~> 9.1"
 
-# Redis backs the cart and session stores (native TTL, not a second catalog).
-gem "redis", "~> 6.0"
-
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 

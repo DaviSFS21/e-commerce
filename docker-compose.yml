@@ -14,22 +14,5 @@ services:
       retries: 5
       start_period: 20s
 
-  redis:
-    image: redis:7
-    container_name: ecommerce-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    # Persistence deliberately off. Everything Redis holds here (carts,
-    # sessions) is keyed with a TTL and is never the system of record, so
-    # writing it to disk would buy nothing and cost latency on every write.
-    # If this container is lost, the correct outcome is that carts are empty.
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
   mongo_data:
