@@ -145,9 +145,7 @@ helpers de formulário funcionam igual, sem nenhum banco relacional envolvido.
 
 ## Vídeo explicativo
 
-<!-- Substituir pelo link do vídeo -->
-
-_Em breve._
+https://github.com/user-attachments/assets/af9ed1d5-517a-4e3c-a1f6-543c3d1c1f4c
 
 ---
 
