@@ -45,8 +45,8 @@ Category                          Product
     key                             price      (Decimal128)
     label                           in_stock
     kind                            specs      (Hash livre)
-    required                        images[]   (embedado)
-    unit                              url / alt / position
+    required
+    unit
 ```
 
 O campo do produto se chama `specs` e **não** `attributes` de propósito:
@@ -62,7 +62,6 @@ Diagramas completos em [`docs/modelagem.md`](docs/modelagem.md).
 | Relação | Decisão | Por quê |
 |---|---|---|
 | `Category embeds_many :field_specs` | **embeda** | Um field spec não significa nada fora da categoria, nunca é consultado sozinho e são poucos. Embedar faz ler a categoria — *incluindo o schema dela* — custar uma única busca de documento, e isso importa porque **toda** validação de produto lê esse schema. |
-| `Product embeds_many :images` | **embeda** | Pertence a exatamente um produto, quantidade limitada, sempre exibida junto. Coleção separada acrescentaria uma consulta por página e não compraria nada. |
 | `Product belongs_to :category` | **referencia** | Uma categoria é compartilhada por dezenas de produtos, é mutável (renomeá-la não pode reescrever todos os produtos) e é listada por conta própria. Embedar duplicaria dado mutável — a anomalia de atualização clássica. |
 
 A verificação não foi feita pelo model, e sim descendo ao driver cru para olhar o BSON
@@ -74,7 +73,7 @@ raw["field_specs"]                                    # => Array aninhado
 Mongoid.default_client.database.collection_names       # => ["categories", "products"]
 ```
 
-Não existe coleção `field_specs` nem `images`. E o documento do produto tem
+Não existe coleção `field_specs`. E o documento do produto tem
 `category_id`, não um sub-documento `category`.
 
 ---
@@ -273,13 +272,13 @@ corrente — selecionar "Apple" não pode reduzir a lista de marcas a Apple sozi
 
 ## Escopo
 
-Ficaram deliberadamente de fora, por tempo: carrinho em Redis com TTL nativo, `Order`
-com snapshot denormalizado do produto comprado, e suíte de testes automatizados. A
-verificação foi feita no `rails console` e no `mongosh`, e está registrada passo a passo
-em [`docs/README.md`](docs/README.md).
+Ficaram deliberadamente de fora: carrinho, `Order` com snapshot denormalizado do produto
+comprado, e suíte de testes automatizados. O projeto entrega o catálogo — modelagem,
+validação, indexação e agregação —, que é onde está o argumento sobre banco
+não-relacional.
 
-O `docker-compose.yml` já sobe o Redis, e o modelo previsto para carrinho e pedido está
-descrito em [`docs/modelagem.md`](docs/modelagem.md).
+A verificação foi feita no `rails console` e no `mongosh`, e está registrada passo a
+passo em [`docs/README.md`](docs/README.md).
 
 ---
 

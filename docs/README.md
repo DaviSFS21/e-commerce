@@ -4,7 +4,7 @@ Registro passo a passo da reconstrução do projeto. Cada checkpoint é uma sess
 de 40–60 minutos que termina em algo **observável**, não em algo que "deveria
 funcionar".
 
-**Stack:** Rails 8.1 · Mongoid 9.1 · MongoDB 8 · Redis 7 · Ruby 3.4.10
+**Stack:** Rails 8.1 · Mongoid 9.1 · MongoDB 8 · Ruby 3.4.10
 **Critério de avaliação:** proficiência com bancos não-relacionais — modelagem,
 indexação e demonstração de consultas. Não é sobre UI.
 
@@ -22,21 +22,22 @@ indexação e demonstração de consultas. Não é sobre UI.
 
 | # | Checkpoint | Status |
 |---|---|---|
-| 1 | Serviços no ar (Mongo + Redis, `mongoid.yml`) | ✅ feito |
+| 1 | Serviços no ar (MongoDB, `mongoid.yml`) | ✅ feito |
 | 2 | `Category` + `FieldSpec` (schema embedado) | ✅ feito |
 | 3 | `Product` + `specs`, sem validação | ✅ feito |
 | 4 | A validação ⭐ | ✅ feito |
 | 5 | Seeds | ✅ feito |
 | 6 | Índices + `explain` ⭐ | ✅ feito |
 | 7 | Agregação `$facet` ⭐ | ✅ feito |
-| 8 | Carrinho no Redis | ✂️ cortado (tempo) |
-| 9 | `Order` + snapshot | ✂️ cortado (tempo) |
+| 8 | Carrinho | ✂️ fora do escopo |
+| 9 | `Order` + snapshot | ✂️ fora do escopo |
 | 10 | UI (listagem, sidebar facetada, detalhe) | ✅ feito |
 | 11 | README final | ✅ feito (sem suíte de testes) |
 
 ⭐ = material diretamente avaliado.
 
-**Cortados do escopo:** Keycloak (fica para a API em Django) e CRUD admin.
+**Cortados do escopo:** Keycloak (fica para a API em Django), CRUD admin,
+carrinho e pedido. O projeto entrega catálogo, validação, indexação e agregação.
 
 ---
 
@@ -69,8 +70,7 @@ Sem models, sem RSpec, sem seeds.
 
 ### O que foi construído
 
-**`docker-compose.yml`** — dois serviços, `mongo:8` e `redis:7`, nas portas
-padrão. Três decisões:
+**`docker-compose.yml`** — `mongo:8` na porta padrão. Duas decisões:
 
 - **Volume nomeado** (`mongo_data:/data/db`). Sem ele o banco vive na camada
   gravável do container e um `docker rm` apaga tudo.
@@ -78,9 +78,6 @@ padrão. Três decisões:
   com uma consequência: MongoDB só oferece transações em replica set, então a
   suíte de testes não vai poder dar rollback entre exemplos e terá que deletar
   documentos (ver checkpoint 11).
-- **Redis sem persistência** (`--save "" --appendonly no`). Tudo que ele guarda
-  tem TTL e não é fonte da verdade; gravar em disco custaria latência em toda
-  escrita sem comprar nada.
 
 **`config/mongoid.yml`** — gerado com:
 
@@ -256,10 +253,7 @@ diferentes convivendo na mesma coleção. Ainda **sem validação**.
 ### O que foi construído
 
 `app/models/product.rb` — `name`, `brand`, `price` (`BigDecimal`), `in_stock`
-(`Mongoid::Boolean`), `specs` (`Hash`). `belongs_to :category`,
-`embeds_many :images`.
-
-`app/models/image.rb` — `url`, `alt`, `position`, `embedded_in :product`.
+(`Mongoid::Boolean`), `specs` (`Hash`). `belongs_to :category`.
 
 E o `has_many :products` do `Category` foi descomentado.
 
@@ -646,8 +640,8 @@ sozinha.
 
 ---
 
-## Checkpoints 8 e 9 — cortados ✂️
+## Checkpoints 8 e 9 — fora do escopo ✂️
 
-Carrinho em Redis e `Order` com snapshot denormalizado ficaram fora por tempo. O
-`docker-compose.yml` já sobe o Redis e o modelo previsto está em
-[`modelagem.md`](modelagem.md), então dá para retomar sem retrabalho.
+Carrinho e `Order` com snapshot denormalizado ficaram fora. O projeto entrega o
+catálogo: modelagem com schema como dado, validação em tempo de escrita,
+indexação com prova de `explain` e agregação com `$facet`.

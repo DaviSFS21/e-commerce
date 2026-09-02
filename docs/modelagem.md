@@ -5,9 +5,8 @@ ainda; a coluna de status diz o que já foi construído.
 
 | Entidade | Onde vive | Checkpoint |
 |---|---|---|
-| `Category` + `FieldSpec` | MongoDB, coleção `categories` | 2 🔄 |
-| `Product` + `Image` | MongoDB, coleção `products` | 3 ⬜ |
-| Carrinho | Redis, `cart:<id>` | 8 ⬜ |
+| `Category` + `FieldSpec` | MongoDB, coleção `categories` | 2 ✅ |
+| `Product` | MongoDB, coleção `products` | 3 ✅ |
 | `Order` + `LineItem` | MongoDB, coleção `orders` | 9 ⬜ |
 
 ---
@@ -22,7 +21,6 @@ Aplicada caso a caso:
 | Relação | Decisão | Por quê |
 |---|---|---|
 | `Category` → `FieldSpec` | **embeda** | Um field spec não significa nada fora da categoria, nunca é consultado sozinho, e são poucos. Embedar faz ler a categoria *com o schema dela* custar uma única busca — e isso importa porque toda validação de produto lê esse schema. |
-| `Product` → `Image` | **embeda** | Pertence a exatamente um produto, quantidade limitada, sempre exibida junto. Coleção separada só acrescentaria uma consulta por página. |
 | `Product` → `Category` | **referencia** | Uma categoria é compartilhada por milhares de produtos, é mutável (renomear não pode reescrever todos os produtos) e é listada por conta própria. Embedar duplicaria dado mutável — a anomalia de atualização clássica. |
 | `Order` → `LineItem` | **embeda** | Um pedido é lido como unidade e suas linhas não existem fora dele. |
 | `LineItem` → `Product` | **copia** | Não é referência: é uma cópia congelada. Ver mais abaixo. |
@@ -65,14 +63,6 @@ classDiagram
         Boolean in_stock
         Hash specs
         ObjectId category_id
-        Array images
-    }
-
-    class Image {
-        <<embedded>>
-        String url
-        String alt
-        Integer position
     }
 
     class Order {
@@ -97,7 +87,6 @@ classDiagram
     }
 
     Category "1" *-- "0..*" FieldSpec : embeda
-    Product "1" *-- "0..*" Image : embeda
     Order "1" *-- "1..*" LineItem : embeda
 
     Product "0..*" --> "1" Category : referencia via category_id
@@ -108,9 +97,9 @@ classDiagram
 
 Três coisas para ler no diagrama:
 
-**`FieldSpec` e `Image` não têm `_id` de coleção.** Não são coleções. Existem
+**`FieldSpec` e `LineItem` não têm `_id` de coleção.** Não são coleções. Existem
 como sub-documentos dentro do array do pai. `db.getCollectionNames()` nunca vai
-listar `field_specs` nem `images` — é assim que se prova que o embed funcionou.
+listar `field_specs` — é assim que se prova que o embed funcionou.
 
 **Só `Product → Category` é seta sólida.** É a única referência do modelo. O
 produto guarda `category_id`; nada mais aponta para nada.
@@ -157,36 +146,21 @@ renderizar o pedido, e um pedido cujo produto foi apagado continua completo.
 
 ---
 
-## Os dois bancos
+## As coleções
 
 ```mermaid
 flowchart TB
-    subgraph MONGO["MongoDB — o que precisa durar e ser consultado"]
+    subgraph MONGO["MongoDB"]
         C[("categories")]
         P[("products")]
         O[("orders")]
         P -->|category_id| C
     end
-
-    subgraph REDIS["Redis — chaveado, efêmero, expira sozinho"]
-        K["cart:SESSION_ID<br/>hash: product_id → quantidade<br/>TTL 2h"]
-        S["cache:_session_id:ID<br/>sessão do Rails<br/>TTL 2h"]
-    end
-
-    K -.->|guarda só ids, nunca preços| P
-    S -.->|guarda o cart_id| K
 ```
 
-O carrinho está no Redis porque é **chaveado e nunca consultado** (um `HGETALL`
-por sessão, sem índice e sem filtro), **de escrita intensa** (cada "+1" é um
-`HINCRBY`, não a reescrita de um documento) e **expira sozinho** — `EXPIRE` é TTL
-nativo. O equivalente no MongoDB seria um campo `abandonado_em`, um índice TTL e
-um documento que fica lá até o varredor perceber.
-
-E repare no que o Redis **não** guarda: nome nem preço de produto. Ele guarda
-ids; os produtos vêm do MongoDB, que continua sendo a fonte única da verdade.
-É por isso que uma mudança de preço aparece imediatamente num carrinho ainda não
-finalizado — e por que ela *não* aparece num pedido já fechado.
+Três coleções, e uma única referência entre elas. Tudo o mais que parece relação
+— o schema dentro da categoria, as linhas dentro do pedido — está aninhado no
+documento dono.
 
 ---
 
