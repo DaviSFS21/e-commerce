@@ -1,296 +1,191 @@
-# Catálogo — Rails + MongoDB (Mongoid)
+# Catálogo — Rails + MongoDB
 
-Catálogo de e-commerce construído para demonstrar modelagem em banco não-relacional:
-uma coleção de documentos heterogêneos cujo formato é **definido por dado**, não por DDL.
+Catálogo de e-commerce onde **cada categoria carrega o próprio schema**. Notebooks têm
+RAM e touchscreen, vinhos têm safra e uva, tênis têm drop e impermeabilidade — tudo na
+mesma coleção, e os produtos são validados contra o schema da própria categoria no
+momento da escrita.
 
-A ideia central é esta: **cada categoria carrega o próprio schema, e os produtos são
-validados contra ele no momento da escrita.** Schema-on-read não significa ausência de
-validação — significa que a validação saiu do DDL do banco e passou para a aplicação,
-onde o schema é ele mesmo um documento que se pode inserir. Criar uma categoria nova
-não exige classe nova, coluna nova nem migration.
+Criar uma categoria nova não exige classe nova, coluna nova nem migration.
 
-**Stack:** Rails 8.1 · Mongoid 9.1 · MongoDB 8 · Ruby 3.4.10
-Views renderizadas no servidor. Sem API separada, sem frontend à parte.
+**Rails 8.1 · Mongoid 9.1 · MongoDB 8 · Ruby 3.4.10**
 
 ---
 
-## Como rodar
+## Como executar
+
+Suba o MongoDB:
 
 ```bash
 docker compose up -d
 ```
 
+Instale as dependências, carregue o catálogo e crie os índices:
+
 ```bash
-bundle install
-bin/rails db:seed
-bin/rails db:mongoid:create_indexes
+bundle install && bin/rails db:seed && bin/rails db:mongoid:create_indexes
+```
+
+Suba a aplicação:
+
+```bash
 bin/rails server
 ```
 
-Conferir os índices direto no servidor:
+Acesse `http://localhost:3000`. O seed cria 3 categorias e 30 produtos.
+
+---
+
+## Validando as funcionalidades
+
+### 1. Schema por categoria, na tela
+
+Navegue entre **Notebooks**, **Vinhos** e **Tênis de corrida** pelas abas.
+
+A barra lateral **muda de forma** em cada uma, e a página de detalhe de um produto mostra
+rótulos e unidades diferentes — "Safra / 2019" num vinho, "Memória RAM / 16 GB" num
+notebook. Não existe código específico por categoria em lugar nenhum das views: tudo vem
+dos `field_specs` da categoria.
+
+### 2. Filtros
+
+Na listagem, clique numa marca e arraste as alças do slider de preço. A barra lateral
+mostra as contagens de cada marca e um histograma da distribuição de preços.
+
+### 3. Validação em tempo de escrita
+
+No `bin/rails console`:
+
+```ruby
+notebooks = Category.find_by(slug: "notebooks")
+def testar(cat, specs) = Product.new(name: "X", brand: "Y", price: 1, category: cat, specs: specs).tap(&:valid?).errors[:specs]
+
+ok = { "tela_polegadas" => 14, "ram_gb" => 16, "armazenamento_gb" => 512, "touchscreen" => true }
+
+testar(notebooks, ok)                             # => []  válido
+testar(notebooks, ok.merge("uva" => "Malbec"))    # => chave não declarada na categoria
+testar(notebooks, ok.merge("ram_gb" => "muita"))  # => tipo não bate com o declarado
+testar(notebooks, ok.except("ram_gb"))            # => obrigatória faltando
+testar(notebooks, ok.merge("touchscreen" => false)) # => []  false é valor, não ausência
+```
+
+A última linha é a que importa: em Ruby `false.blank?` é `true`, então uma checagem
+ingênua de presença rejeitaria todo `false` legítimo — um tênis que não é impermeável, um
+vinho que não é orgânico.
+
+### 4. Heterogeneidade no banco
 
 ```bash
-docker exec ecommerce-mongo mongosh e_commerce_development --eval 'db.products.getIndexes()'
+docker exec -it ecommerce-mongo mongosh e_commerce_development
 ```
 
----
-
-## Modelo de dados
-
-```
-Category                          Product
-  name                              name
-  slug          <-- referenciado -- category_id
-  field_specs[]  (embedado)         brand
-    key                             price      (Decimal128)
-    label                           in_stock
-    kind                            specs      (Hash livre)
-    required
-    unit
+```javascript
+db.products.aggregate([{ $sample: { size: 5 } }, { $project: { name: 1, specs: 1, _id: 0 } }])
 ```
 
-O campo do produto se chama `specs` e **não** `attributes` de propósito:
-`Mongoid::Document` já define `#attributes`, e o Mongoid recusa a declaração.
+Cinco produtos aleatórios, conjuntos de chaves completamente diferentes, uma coleção só —
+sem `null` preenchendo coluna que não existe.
 
-Diagramas completos em [`docs/modelagem.md`](docs/modelagem.md).
-
-### A regra de embedar versus referenciar
-
-> **Embede o que é possuído, limitado e sempre lido junto com o pai.
-> Referencie o que é compartilhado, ilimitado ou consultado por conta própria.**
-
-| Relação | Decisão | Por quê |
-|---|---|---|
-| `Category embeds_many :field_specs` | **embeda** | Um field spec não significa nada fora da categoria, nunca é consultado sozinho e são poucos. Embedar faz ler a categoria — *incluindo o schema dela* — custar uma única busca de documento, e isso importa porque **toda** validação de produto lê esse schema. |
-| `Product belongs_to :category` | **referencia** | Uma categoria é compartilhada por dezenas de produtos, é mutável (renomeá-la não pode reescrever todos os produtos) e é listada por conta própria. Embedar duplicaria dado mutável — a anomalia de atualização clássica. |
-
-A verificação não foi feita pelo model, e sim descendo ao driver cru para olhar o BSON
-armazenado:
+### 5. Agregação numa ida só
 
 ```ruby
-raw = Mongoid.default_client[:categories].find(_id: categoria.id).first
-raw["field_specs"]                                    # => Array aninhado
-Mongoid.default_client.database.collection_names       # => ["categories", "products"]
+ProductFacets.new(category: Category.find_by(slug: "vinhos")).call
 ```
 
-Não existe coleção `field_specs`. E o documento do produto tem
-`category_id`, não um sub-documento `category`.
-
----
-
-## Validação dirigida pelo schema da categoria
-
-`Product#specs_match_category` lê os `field_specs` da categoria em tempo de escrita e
-aplica quatro regras:
-
-| Regra | Rejeita |
-|---|---|
-| Nenhuma chave não declarada | notebook com `uva` |
-| Tipo tem que bater com o `kind` | `ram_gb: "dezesseis"` |
-| Chave obrigatória tem que ser informada | notebook sem `ram_gb` |
-| **`false` é valor, não ausência** | `touchscreen: false` tem que **passar** |
-
-A última linha é a sutil. Em Ruby `false.blank?` é `true`, então a checagem óbvia de
-presença rejeita silenciosamente todo `false` legítimo — um tênis que não é
-impermeável, um vinho que não é orgânico. `0` cai na mesma armadilha com `present?`.
-
-Por isso `FieldSpec` separa duas perguntas que parecem uma só:
-
-```ruby
-def matches?(value)   # o tipo bate?
-def supplied?(value)  # foi informado?
-```
-
-`supplied?` nunca usa `blank?`: só `nil` e string em branco contam como não informado.
-
-Criar uma categoria é um único insert:
-
-```ruby
-Category.create!(name: "Câmeras", slug: "cameras", field_specs: [
-  FieldSpec.new(key: "megapixels", label: "Resolução", kind: "number", required: true, unit: "MP")
-])
-```
-
-A partir daí o validador aplica o schema novo, a barra lateral ganha um bloco de filtro,
-a página de detalhe renderiza o rótulo e a unidade novos, e o índice wildcard torna
-`specs.megapixels` uma busca indexada. **Nenhuma linha de código mudou.**
+Contagens por marca, faixas de preço e min/max vêm de **uma única** chamada `aggregate`,
+usando `$facet`. A alternativa seriam quatro consultas cujos resultados podem divergir
+por terem rodado em instantes diferentes.
 
 ---
 
 ## Índices
 
-Declarados nos models, criados com `db:mongoid:create_indexes`, conferidos no mongosh:
+Quatro índices, declarados nos models e criados por `db:mongoid:create_indexes`:
 
 ```
-products                                    categories
-  _id_            {"_id":1}                   _id_                  {"_id":1}
-  category_price  {"category_id":1,"price":1} category_slug_unique  {"slug":1}  UNIQUE
+products                                     categories
+  category_price  {"category_id":1,"price":1}  category_slug_unique  {"slug":1}  UNIQUE
   specs           {"specs.$**":1}
   name_brand      {"_fts":"text","_ftsx":1}
 ```
 
-- **`{ category_id: 1, price: 1 }`** — a listagem é sempre "esta categoria, nesta faixa
-  de preço, do mais barato". Igualdade primeiro, faixa e ordenação depois, para um índice
-  só servir o filtro **e** a ordenação sem estágio `SORT` bloqueante.
-- **`{ "specs.$**": 1 }`** — ver abaixo.
-- **índice de texto** em `name` + `brand`.
-- **índice único** em `Category#slug`, no servidor e não só no validador `uniqueness`,
-  que tem condição de corrida entre duas requisições simultâneas.
+**`{ category_id: 1, price: 1 }`** — a listagem é sempre "esta categoria, nesta faixa de
+preço, do mais barato". Igualdade primeiro, faixa e ordenação depois, para um índice só
+servir o filtro **e** a ordenação.
 
-### O que o índice wildcard resolve
+**`{ "specs.$**": 1 }` — o índice *wildcard*, e o mais interessante do projeto.** Como
+cada categoria define suas próprias chaves, ninguém sabe quais existirão: a coleção já
+tem 15 chaves distintas e uma categoria nova acrescenta mais. Não dá para declarar um
+índice por chave que ainda não existe. O wildcard indexa **todo** caminho sob `specs`,
+presente e futuro.
 
-O ponto de um schema definido por categoria é que **ninguém sabe as chaves de antemão**.
-Notebooks têm `ram_gb`, vinhos têm `uva`, e a categoria criada daqui a cinco minutos vai
-ter outra coisa. Hoje a coleção já tem 15 chaves de spec distintas:
+O ganho, medido com `explain` na listagem filtrada:
 
-```
-armazenamento_gb, cpu, drop_mm, impermeavel, organico, pais, peso_g, ram_gb,
-safra, superficie, tamanho_eu, tela_polegadas, teor_alcoolico, touchscreen, uva
-```
-
-Não dá para declarar um índice por chave quando o conjunto é aberto, e declarar um para
-cada chave futura não escala — cada índice é custo de escrita em toda inserção.
-
-`{ "specs.$**": 1 }` indexa **todo** caminho sob `specs`, presente e futuro, num índice
-só. O plano mostra o mecanismo:
-
-```
-keyPattern: {"$_path": 1, "specs.uva": 1}
-```
-
-O MongoDB limita `$_path` à chave consultada e varre os valores dentro dela — um índice
-físico se comportando como um índice por chave, para qualquer chave.
-
-### Antes e depois do `explain`
-
-Listagem filtrada (uma categoria, faixa de preço), com 30 produtos na coleção:
-
-| Métrica | Antes | Depois |
+| | Antes | Depois |
 |---|---|---|
-| estágio | `COLLSCAN` | `IXSCAN` → `FETCH` |
-| `totalDocsExamined` | 30 | 7 |
-| `totalKeysExamined` | 0 | 7 |
-| `works` | 31 | 8 |
-| `nReturned` | 7 | 7 |
+| estágio | `COLLSCAN` | `IXSCAN` |
+| documentos examinados | 30 | 7 |
+| chaves examinadas | 0 | 7 |
 
-Passou a examinar exatamente os 7 documentos que devolve, em vez dos 30 da coleção.
+Passou a examinar exatamente os documentos que devolve. Em 30 documentos isso não muda o
+relógio — o que muda é a classe de complexidade, de O(n) no tamanho da coleção para
+O(log n + k). Em 300 mil produtos, é a diferença entre milissegundos e segundos.
 
-As demais consultas, já com os índices:
-
-```
-specs.uva = Malbec             IXSCAN  idx=specs       ret=1  docs=1   keys=1
-specs.impermeavel = true       IXSCAN  idx=specs       ret=3  docs=3   keys=3
-specs.ram_gb >= 16             IXSCAN  idx=specs       ret=7  docs=7   keys=7
-texto: MacBook                 IXSCAN  idx=name_brand  ret=2  docs=2   keys=2
-in_stock = false (sem índice)  COLLSCAN                ret=3  docs=30  keys=0
-```
-
-A última linha é o **caso de controle** e não é decorativa: sem ela, "deu IXSCAN" não
-provaria nada, porque poderia ser que toda consulta desse IXSCAN. Com ela fica
-demonstrado que a medição distingue os dois casos. As três primeiras usam categorias
-diferentes e o **mesmo** índice `specs`.
-
-Uma observação honesta sobre tempo: em 30 documentos o relógio não mede nada útil — a
-coleção inteira cabe em memória e o próprio planejamento do plano custa mais que a
-varredura. O que o `explain` prova é mudança de **classe de complexidade**: `COLLSCAN` é
-O(n) no tamanho da coleção, `IXSCAN` é O(log n + k) com k = tamanho do resultado. Em 30
-documentos isso é invisível; em 300 mil, é a diferença entre milissegundos e segundos.
-
-Saída bruta completa em [`docs/index-optimization.md`](docs/index-optimization.md).
-
----
-
-## Agregação: um `$facet`, uma ida ao servidor
-
-[`ProductFacets`](app/services/product_facets.rb) monta a barra lateral inteira numa
-única chamada `aggregate`:
+Para reproduzir:
 
 ```ruby
-[ { "$match" => { "category_id" => categoria.id } },
-  { "$facet" => {
-      "brands"        => [ { "$sortByCount" => "$brand" } ],
-      "price_buckets" => [ { "$bucket" => { "groupBy" => "$price", "boundaries" => [...],
-                                            "default" => "acima",
-                                            "output" => { "count" => { "$sum" => 1 } } } } ],
-      "price_range"   => [ { "$group" => { "_id" => nil, "min" => { "$min" => "$price" },
-                                                         "max" => { "$max" => "$price" } } } ],
-      "total"         => [ { "$count" => "value" } ] } } ]
+Product.where(category_id: Category.find_by(slug: "notebooks").id)
+       .where(:price.gte => 2000, :price.lte => 9000)
+       .explain(verbosity: :execution_stats)
 ```
 
-O `$match` é o **primeiro estágio da pipeline externa**, não um estágio dentro de um
-sub-pipeline: todas as facetas precisam ver os mesmos documentos filtrados. Colocá-lo
-dentro de um sub-pipeline não dá erro — dá números errados em silêncio para os outros.
-
-A alternativa ingênua é uma consulta por bloco da barra: N idas ao servidor cujos
-resultados podem discordar entre si por terem rodado em instantes diferentes.
-Assinando o monitor de comandos do driver, o tráfego de rede desta chamada é
-exatamente `["aggregate"]`.
-
-O Mongoid **não tem DSL para `$facet`**, então aqui se desce ao driver cru
-(`Product.collection.aggregate`). É o único lugar da aplicação onde isso acontece — o
-ODM cobre o resto do caminho.
-
-`price` está gravado como `Decimal128` (o Mongoid mapeia `BigDecimal` para ele), então
-`$min`, `$max` e `$bucket` comparam numericamente e dinheiro nunca passa por float. As
-fronteiras da pipeline são `BigDecimal`, para casar com o tipo armazenado.
-
-**Fronteiras fixas em vez de `$bucketAuto`**, deliberadamente: as três categorias têm
-escalas muito diferentes (vinhos de R$ 55 a R$ 529, notebooks de R$ 2.499 a R$ 14.999), e
-o `$bucket` omite os baldes vazios sozinho — então cada categoria mostra só as faixas que
-de fato tem, com fronteiras previsíveis e testáveis.
+Saída completa em [`docs/index-optimization.md`](docs/index-optimization.md).
 
 ---
 
-## Interface
+## Por que MongoDB
 
-Uma listagem por categoria, com barra lateral facetada, e uma página de detalhe.
+Porque **produtos de categorias diferentes não têm os mesmos atributos**, e esse é
+exatamente o caso em que o modelo relacional fica desconfortável.
 
-O que vale reparar: **não existe código específico por categoria em lugar nenhum das
-views.** A página de detalhe percorre os `field_specs` da categoria e tira dali o rótulo,
-a ordem e a unidade:
+Num banco relacional haveria três saídas, todas ruins:
 
-```erb
-<% @category.field_specs.each do |field_spec| %>
-  <dt><%= field_spec.label %></dt>
-  <dd><%= spec_value(field_spec, @product.specs[field_spec.key]) %></dd>
-<% end %>
-```
+- **uma coluna por atributo de toda categoria que existir** — uma tabela larga e cheia de
+  `NULL`, e uma migration a cada categoria nova;
+- **uma tabela por categoria** — schema duplicado e consulta impossível de generalizar;
+- **uma tabela EAV** (`produto_id`, `chave`, `valor`) — tudo vira texto, perde-se a
+  tipagem, e cada leitura vira um monte de junções.
 
-O mesmo template renderiza "Safra / 2019 / Teor alcoólico / 13.9 %" para um vinho e
-"Memória RAM / 16 GB / Touchscreen / Não" para um notebook. Uma categoria nova entra
-funcionando.
+No MongoDB o produto guarda um documento aninhado com as chaves que a categoria dele
+declara, e o índice wildcard mantém isso consultável sem saber as chaves de antemão.
 
-O filtro de preço é um slider de faixa com duas alças, cujos limites vêm do `$min`/`$max`
-do próprio `$facet`; atrás dele, um histograma desenhado com as contagens do `$bucket`
-mostra onde os produtos se concentram. Sem JavaScript os dois `input[type=range]` ainda
-submetem o formulário.
+O que se ganha em flexibilidade se paga em validação: como o banco não impõe formato, a
+aplicação impõe. É o que o `Product#specs_match_category` faz, lendo o schema declarado
+pela categoria. **Schema flexível não é ausência de schema — é schema em outro lugar.**
 
-As contagens de marca são calculadas sobre a categoria inteira, não sobre o filtro
-corrente — selecionar "Apple" não pode reduzir a lista de marcas a Apple sozinha.
+## Por que Rails
 
----
+Agilidade. O framework já entrega roteamento, camada de views, validações, console
+interativo e geradores, então o esforço foi todo para a modelagem e as consultas, que é
+o que este projeto quer demonstrar.
 
-## Escopo
-
-Ficaram deliberadamente de fora: carrinho, `Order` com snapshot denormalizado do produto
-comprado, e suíte de testes automatizados. O projeto entrega o catálogo — modelagem,
-validação, indexação e agregação —, que é onde está o argumento sobre banco
-não-relacional.
-
-A verificação foi feita no `rails console` e no `mongosh`, e está registrada passo a
-passo em [`docs/README.md`](docs/README.md).
+O Mongoid se encaixa nisso porque implementa o ActiveModel — o mesmo contrato de
+validações e callbacks do ActiveRecord — então `validates`, `errors.full_messages` e os
+helpers de formulário funcionam igual, mesmo sem nenhum banco relacional envolvido.
 
 ---
 
-## Onde olhar
+## Vídeo explicativo
 
-```
-app/models/category.rb      name, slug, embeds_many :field_specs, índice único
-app/models/field_spec.rb    o schema como dado: key, label, kind, required, unit
-app/models/product.rb       specs (Hash livre), a validação, os três índices
-app/services/               ProductFacets — a pipeline $facet
-lib/catalog/blueprint.rb    o catálogo de seed, lido também pelo db:seed
-docs/README.md              diário de construção, checkpoint a checkpoint
-docs/modelagem.md           diagramas do modelo de dados
-docs/index-optimization.md  saída bruta do explain, antes e depois
-```
+<!-- Substituir pelo link do vídeo -->
+
+_Em breve._
+
+---
+
+## Documentação complementar
+
+| | |
+|---|---|
+| [`docs/README.md`](docs/README.md) | diário de construção, checkpoint a checkpoint |
+| [`docs/modelagem.md`](docs/modelagem.md) | diagramas do modelo de dados e a regra de embedar vs. referenciar |
+| [`docs/index-optimization.md`](docs/index-optimization.md) | saída bruta do `explain`, antes e depois dos índices |
