@@ -18,8 +18,6 @@ class ProductsController < ApplicationController
 
   private
 
-  # The facet counts are computed over the whole category, not over the current
-  # filter: selecting "Apple" must not collapse the brand list to Apple alone.
   def filtered_products
     scope = Product.where(category_id: @category.id)
     scope = scope.where(brand: params[:brand]) if params[:brand].present?
@@ -31,8 +29,6 @@ class ProductsController < ApplicationController
     scope
   end
 
-  # Params arrive as strings and may be anything; a bad value filters nothing
-  # rather than raising.
   def decimal_param(key)
     raw = params[key]
     return nil if raw.blank?

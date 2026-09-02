@@ -30,9 +30,6 @@
 
     <div class="facet">
       <h3>Preço</h3>
-
-      <%# Histograma vindo do $bucket do mesmo $facet: mostra onde os produtos
-          se concentram, atrás do slider. %>
       <% maior = @facets.price_buckets.map(&:count).max.to_i %>
       <% if maior.positive? %>
         <div class="hist">
