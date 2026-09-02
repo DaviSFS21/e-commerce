@@ -51,28 +51,7 @@ dos `field_specs` da categoria.
 Na listagem, clique numa marca e arraste as alças do slider de preço. A barra lateral
 mostra as contagens de cada marca e um histograma da distribuição de preços.
 
-### 3. Validação em tempo de escrita
-
-No `bin/rails console`:
-
-```ruby
-notebooks = Category.find_by(slug: "notebooks")
-def testar(cat, specs) = Product.new(name: "X", brand: "Y", price: 1, category: cat, specs: specs).tap(&:valid?).errors[:specs]
-
-ok = { "tela_polegadas" => 14, "ram_gb" => 16, "armazenamento_gb" => 512, "touchscreen" => true }
-
-testar(notebooks, ok)                             # => []  válido
-testar(notebooks, ok.merge("uva" => "Malbec"))    # => chave não declarada na categoria
-testar(notebooks, ok.merge("ram_gb" => "muita"))  # => tipo não bate com o declarado
-testar(notebooks, ok.except("ram_gb"))            # => obrigatória faltando
-testar(notebooks, ok.merge("touchscreen" => false)) # => []  false é valor, não ausência
-```
-
-A última linha é a que importa: em Ruby `false.blank?` é `true`, então uma checagem
-ingênua de presença rejeitaria todo `false` legítimo — um tênis que não é impermeável, um
-vinho que não é orgânico.
-
-### 4. Heterogeneidade no banco
+### 3. Heterogeneidade no banco
 
 ```bash
 docker exec -it ecommerce-mongo mongosh e_commerce_development
@@ -85,7 +64,7 @@ db.products.aggregate([{ $sample: { size: 5 } }, { $project: { name: 1, specs: 1
 Cinco produtos aleatórios, conjuntos de chaves completamente diferentes, uma coleção só —
 sem `null` preenchendo coluna que não existe.
 
-### 5. Agregação numa ida só
+### 4. Agregação numa ida só
 
 ```ruby
 ProductFacets.new(category: Category.find_by(slug: "vinhos")).call
@@ -142,35 +121,25 @@ Saída completa em [`docs/index-optimization.md`](docs/index-optimization.md).
 
 ---
 
-## Por que MongoDB
+## Por que MongoDB e Rails
 
-Porque **produtos de categorias diferentes não têm os mesmos atributos**, e esse é
-exatamente o caso em que o modelo relacional fica desconfortável.
+**MongoDB** porque produtos de categorias diferentes não têm os mesmos atributos, e esse
+é justamente o caso em que o modelo relacional fica desconfortável. Lá haveria três
+saídas, todas ruins: uma coluna por atributo de toda categoria que existir (tabela larga,
+cheia de `NULL`, migration a cada categoria nova), uma tabela por categoria (schema
+duplicado, consulta impossível de generalizar), ou uma tabela EAV (tudo vira texto,
+perde-se a tipagem, cada leitura vira um monte de junções).
 
-Num banco relacional haveria três saídas, todas ruins:
+Aqui o produto guarda um documento aninhado com as chaves que a própria categoria
+declara, e o índice wildcard mantém isso consultável sem saber as chaves de antemão. O
+que se ganha em flexibilidade se paga em validação: como o banco não impõe formato, a
+aplicação impõe — é o que o `Product#specs_match_category` faz. **Schema flexível não é
+ausência de schema; é schema em outro lugar.**
 
-- **uma coluna por atributo de toda categoria que existir** — uma tabela larga e cheia de
-  `NULL`, e uma migration a cada categoria nova;
-- **uma tabela por categoria** — schema duplicado e consulta impossível de generalizar;
-- **uma tabela EAV** (`produto_id`, `chave`, `valor`) — tudo vira texto, perde-se a
-  tipagem, e cada leitura vira um monte de junções.
-
-No MongoDB o produto guarda um documento aninhado com as chaves que a categoria dele
-declara, e o índice wildcard mantém isso consultável sem saber as chaves de antemão.
-
-O que se ganha em flexibilidade se paga em validação: como o banco não impõe formato, a
-aplicação impõe. É o que o `Product#specs_match_category` faz, lendo o schema declarado
-pela categoria. **Schema flexível não é ausência de schema — é schema em outro lugar.**
-
-## Por que Rails
-
-Agilidade. O framework já entrega roteamento, camada de views, validações, console
-interativo e geradores, então o esforço foi todo para a modelagem e as consultas, que é
-o que este projeto quer demonstrar.
-
-O Mongoid se encaixa nisso porque implementa o ActiveModel — o mesmo contrato de
-validações e callbacks do ActiveRecord — então `validates`, `errors.full_messages` e os
-helpers de formulário funcionam igual, mesmo sem nenhum banco relacional envolvido.
+**Rails** por agilidade: roteamento, views, validações e console já vêm prontos, então o
+esforço foi todo para a modelagem e as consultas. O Mongoid se encaixa porque implementa
+o ActiveModel — o mesmo contrato de validações do ActiveRecord — então `validates` e os
+helpers de formulário funcionam igual, sem nenhum banco relacional envolvido.
 
 ---
 
