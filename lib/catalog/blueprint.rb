@@ -109,11 +109,7 @@ module Catalog
             price: BigDecimal(attrs[:price]),
             in_stock: index != 9, # one out-of-stock product per category
             category: category,
-            specs: attrs[:specs],
-            images: [
-              Image.new(url: "https://picsum.photos/seed/#{definition[:slug]}-#{index}/600/400",
-                        alt: attrs[:name], position: 0)
-            ]
+            specs: attrs[:specs]
           )
         end
       end

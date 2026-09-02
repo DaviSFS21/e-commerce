@@ -8,9 +8,6 @@
     <h1><%= @product.name %></h1>
     <p class="price big"><%= money(@product.price) %></p>
     <p class="sub"><%= @product.in_stock ? "Em estoque" : "Sem estoque" %></p>
-    <% if @product.images.any? %>
-      <p class="nota"><%= pluralize(@product.images.size, "imagem") %> embedada neste documento</p>
-    <% end %>
   </div>
 
   <div class="panel">
