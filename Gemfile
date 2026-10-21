@@ -57,7 +57,7 @@ end
 
 group :test do
   # Mongoid-aware matchers (embeds_many, indexes, validations).
-  gem "mongoid-rspec", "~> 4.2"
+  gem "mongoid-rspec", "~> 4.4"
 
   # MongoDB transactions need a replica set; on a standalone mongod the only
   # workable strategy is :deletion. See spec/rails_helper.rb.
